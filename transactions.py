@@ -330,11 +330,12 @@ def main():
     
     # Perform Funding Transaction
     u_S, l_S, r_S, tx_FT = fundingTx(seckeyA1, seckeyB1, pk_A_FT, pk_B_FT, address1, address2, txin,value_in)
-    
+    print("type: ",type(tx_FT))
     # Sign raw transaction and send it to the connected node
     r = proxy_connection.signrawtransaction(tx_FT)
     tx = r['tx']
     txid2 =proxy_connection.sendrawtransaction(tx)
+    print("type 2: ",type(txid2))
     print(b2lx(txid2))
     #print(b2lx(proxy_connection.sendrawtransaction(tx)))
     
@@ -344,19 +345,19 @@ def main():
     # Verify that transaction has been added to the block. Need to review this
     nwInfo = proxy_connection.getmininginfo()
     print(nwInfo)
+    
+    
+    hA2 = hashlib.sha256(b'correct horse battery staple').digest()
+    hB2 = hashlib.sha256(b'asdfawei').digest()
+    seckeyA2 = CBitcoinSecret.from_secret_bytes(hA2)
+    seckeyB2 = CBitcoinSecret.from_secret_bytes(hB2)
+    
+    pk_A_Close = seckeyA2.pub
+    pk_B_Close = seckeyB2.pub
+    
+    u_SA, u_SB, l_SA, l_SB, close_tx = closingTx(tx_FT,seckeyA2, seckeyB2, pk_A_Close, pk_B_Close)
+
 # =============================================================================
-#     
-#     
-#     hA2 = hashlib.sha256(b'correct horse battery staple').digest()
-#     hB2 = hashlib.sha256(b'asdfawei').digest()
-#     seckeyA2 = CBitcoinSecret.from_secret_bytes(hA2)
-#     seckeyB2 = CBitcoinSecret.from_secret_bytes(hB2)
-#     
-#     pk_A_Close = seckeyA2.pub
-#     pk_B_Close = seckeyB2.pub
-#     
-#     u_SA, u_SB, l_SA, l_SB, close_tx = closingTx(tx_FT,seckeyA2, seckeyB2, pk_A_Close, pk_B_Close)
-# 
 #     keyPairs = dict()
 #     
 #     index1 = ['A','B','3']
@@ -373,8 +374,8 @@ def main():
 #     l_SA, l_SB, l_S3, tx_commA = commitmentA(tx_FT, keyPairs)
 #     l_SA, l_SB, tx_commB, sigA, sigC = commitmentB(tx_FT, keyPairs)
 #     l_S1, u_S1, l_S2, l_S3 = recoveryTx(tx_commB,l_SB, keyPairs, sigA, sigC)
-#     
 # =============================================================================
+    
     #pushtx.pushtx(b2x(tx_FT.serialize()))
 
     
