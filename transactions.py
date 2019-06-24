@@ -36,6 +36,18 @@ def randomString(stringLength=30):
     letters = string.ascii_lowercase
     return ''.join(random.choice(letters) for i in range(stringLength)).encode('utf-8')
 
+# Aux method to create proxy connection
+def createProxy():
+    proxy_connection = bitcoin.rpc.Proxy()
+    return proxy_connection
+
+# Aux method to create private keys
+def getSecKey(proxy_connection):
+    address = proxy_connection.getnewaddress()
+    address = str(address)
+    seckey = proxy_connection.dumpprivkey(address)
+    return seckey
+    
 # Aux method to generate keys for Commitment Transactions
 def generateKeys():
     # Third Parties Key Pairs. There are two group of third parties (third_a and third_b). Each of them composed by 3 third parties.
@@ -140,7 +152,7 @@ def closingTx(seckeyA1, seckeyB1, txin, seckeyA2, seckeyB2, value_in2, txin_rede
     
     return  l_SA, l_SB, tx
 
-def commitmentA(seckeyA1, seckeyB1, ft_id,tx_index, devices_keypairs, third_a_keypairs, value_in2, txin_redeemScript):
+def commitmentA(seckeyA1, seckeyB1, ft_id,tx_index, devices_keypairs, third_a_keypairs, third_b_keypairs, value_in2, txin_redeemScript):
     
     txid = ft_id
     vout = 0
@@ -157,27 +169,27 @@ def commitmentA(seckeyA1, seckeyB1, ft_id,tx_index, devices_keypairs, third_a_ke
     
     sk_A_a = devices_keypairs[tx_index][0][0][1]
     sk_B_b = devices_keypairs[tx_index][1][1][1]
+    sk_A_c = devices_keypairs[tx_index][0][2][1]
     
     # Third parties public keys
         # Indexes: [x][y]
         # x = 0,1,2 each of the third parties
         # y = 0 public key, y = 1 secret key       
     pk_3_a_0 = third_a_keypairs[0][0]
+    sk_3_a_0 = third_a_keypairs[0][1]
     pk_3_a_1 = third_a_keypairs[1][0]
+    sk_3_a_0 = third_a_keypairs[1][1]
+
     
-    sk_3_b_0 = third_a_keypairs[0][1]
-    sk_3_b_1 = third_a_keypairs[1][1]
+    sk_3_b_0 = third_b_keypairs[0][1]
+    sk_3_b_1 = third_b_keypairs[1][1]
 
     # OP_NOP3 is the equivalent to OP_CHECKSEQUENCEVERIFY 
     # https://bitcoin.org/en/release/v0.13.0#low-level-rpc-changes
     # 100 = W, Number of blocks before the transaction can be published
-    l_SA = CScript([OP_DUP, OP_HASH160,Hash160(pk_A_a), OP_EQUALVERIFY, OP_CHECKSIG])
-    l_SA1 = CScript([100,OP_NOP3, OP_DROP, l_SA])
-    l_SA2 = CScript([OP_DUP, OP_HASH160, Hash160(pk_B_b), OP_EQUALVERIFY, OP_CHECKSIG, OP_DROP])
-    l_SA3 = CScript([OP_DUP, OP_HASH160, Hash160(pk_A_c), OP_EQUALVERIFY, OP_CHECKSIG])
-    
-    # Output 1
-    l_SA = CScript([OP_IF, l_SA1, OP_ELSE, l_SA2, l_SA3, OP_ENDIF]) 
+
+    # Output 1    
+    l_SA = CScript([OP_IF, 0xffffffff,OP_NOP3, OP_DROP, OP_DUP, OP_HASH160, Hash160(sk_A_a.pub), OP_EQUALVERIFY, OP_CHECKSIG, OP_ELSE, OP_DUP, OP_HASH160, Hash160(pk_B_b), OP_EQUALVERIFY, OP_CHECKSIG, OP_DROP, OP_DUP, OP_HASH160, Hash160(pk_A_c), OP_EQUALVERIFY, OP_CHECKSIG, OP_ENDIF]) 
     
     # Output 2
     l_SB = CScript([OP_DUP, OP_HASH160, Hash160(pk_B_b), OP_EQUALVERIFY, OP_CHECKSIG])   
@@ -203,7 +215,8 @@ def commitmentA(seckeyA1, seckeyB1, ft_id,tx_index, devices_keypairs, third_a_ke
     txin_scriptPubKey = txin_redeemScript.to_p2sh_scriptPubKey()
     VerifyScript(txin.scriptSig, txin_scriptPubKey, tx, 0, (SCRIPT_VERIFY_P2SH,))   
 
-    return l_SA, l_SB, l_S3, tx
+    secKeys = [sk_A_c, sk_B_b, sk_A_a, sk_3_a_0]
+    return l_SA, l_SB, l_S3, tx, secKeys
 
 def commitmentB(seckeyA1, seckeyB1, ft_id, tx_index, devices_keypairs, third_b_keypairs, value_in2, txin_redeemScript):
            
@@ -236,21 +249,17 @@ def commitmentB(seckeyA1, seckeyB1, ft_id, tx_index, devices_keypairs, third_b_k
     pk_3_b_1 = third_b_keypairs[1][0] 
     sk_3_b_1 = third_b_keypairs[1][1]
     
-    l_SB = CScript([OP_DUP, OP_HASH160,Hash160(pk_B_a), OP_EQUALVERIFY, OP_CHECKSIG])
-    l_SB1 = CScript([100, OP_NOP3, OP_DROP, l_SB])
-    l_SB2 = CScript([OP_1, pk_3_b_0, pk_3_b_1, OP_2, OP_CHECKMULTISIG, OP_DROP])
-    l_SB3 = CScript([OP_DUP, OP_HASH160, Hash160(pk_B_c), OP_EQUALVERIFY, OP_CHECKSIG, OP_DROP])
-    l_SB4 = CScript([OP_DUP, OP_HASH160, Hash160(pk_A_b), OP_EQUALVERIFY, OP_CHECKSIG])
-    
     # Output 1
-    l_SB = CScript([OP_IF, l_SB1, OP_ELSE, l_SB2, l_SB3, l_SB4, OP_ENDIF])  
-    
+    l_SB = CScript([OP_IF, 0x0000000f, OP_NOP3, OP_DROP, OP_DUP, OP_HASH160,Hash160(pk_B_a), OP_EQUALVERIFY, OP_CHECKSIG, OP_ELSE, OP_1, sk_3_b_0.pub, sk_3_b_1.pub, OP_2, OP_CHECKMULTISIG, OP_DROP, OP_DUP, OP_HASH160, Hash160(pk_B_c), OP_EQUALVERIFY, OP_CHECKSIG, OP_DROP, OP_DUP, OP_HASH160, Hash160(pk_A_b), OP_EQUALVERIFY, OP_CHECKSIG, OP_ENDIF])
+
+
+
     # Output 2
-    l_SA = CScript([OP_DUP, OP_HASH160, Hash160(pk_A_b), OP_EQUALVERIFY, OP_CHECKSIG])
+    l_SA = CScript([OP_DUP, OP_HASH160, Hash160(sk_A_b.pub), OP_EQUALVERIFY, OP_CHECKSIG])
     
      
-    txout1 = CMutableTxOut(value_in2 - 0.001*COIN,CScript([l_SA]))
-    txout2 = CMutableTxOut(0.0001*COIN,CScript([l_SB]))
+    txout1 = CMutableTxOut(value_in2 - 0.001*COIN,CScript([l_SB]))
+    txout2 = CMutableTxOut(0.0001*COIN,CScript([l_SA]))
     txout = [txout1, txout2]
     tx = CMutableTransaction([txin], txout)
         
@@ -267,9 +276,10 @@ def commitmentB(seckeyA1, seckeyB1, ft_id, tx_index, devices_keypairs, third_b_k
     VerifyScript(txin.scriptSig, txin_scriptPubKey, tx, 0, (SCRIPT_VERIFY_P2SH,)) 
 
     secKeys = [sk_A_b, sk_B_c, sk_3_b_0]
+   # secKeys = [sk_A_b]
     return l_SA, l_SB, tx, secKeys
 
-def recoveryTx(secKeys, txin,tx_index, devices_keypairs,third_a_keypairs, third_b_keypairs, value_in, txin_l_S):
+def recoveryTx(secKeys, txin, tx_index, devices_keypairs,third_a_keypairs, third_b_keypairs, value_in, txin_l_S):
     
     
     # Devices keys and signatures
@@ -309,14 +319,13 @@ def recoveryTx(secKeys, txin,tx_index, devices_keypairs,third_a_keypairs, third_
     # Out 3
     l_S3 = CScript([OP_1, pk_3_a_0, pk_3_a_1, OP_2, OP_CHECKMULTISIG, OP_DROP])     
 
-    # Create tx
-       
+    # Create tx      
     txout1 = CMutableTxOut(value_in - 0.003*COIN,CScript([l_S1]))
     txout2 = CMutableTxOut(0.001*COIN,CScript([l_S2]))
     txout3 = CMutableTxOut(0.001*COIN,CScript([l_S3]))
     txout = [txout1, txout2, txout3]
     tx = CMutableTransaction([txin], txout)
-    
+        
     seckeyA = secKeys[0]
     seckeyB = secKeys[1]
     seckey3 = secKeys[2]
@@ -328,8 +337,9 @@ def recoveryTx(secKeys, txin,tx_index, devices_keypairs,third_a_keypairs, third_
     sig3 = seckey3.sign(sighash) + bytes([SIGHASH_ALL])
     
     # Verify Scripts 
-    txin.scriptSig = CScript([sigA, seckeyA.pub, sigB, seckeyB.pub, seckey3.pub])
-    VerifyScript(txin.scriptSig, txin_l_S, tx, 0, (SCRIPT_VERIFY_P2SH,))
+    txin.scriptSig = CScript([sigA, seckeyA.pub, sigB, seckeyB.pub, OP_0, sig3, OP_FALSE, txin_l_S])
+    txin_R_S = txin_l_S.to_p2sh_scriptPubKey()
+    VerifyScript(txin.scriptSig, txin_R_S, tx, 0, (SCRIPT_VERIFY_P2SH,))
       
     return l_S1, l_S2, l_S3, tx
 
@@ -367,9 +377,9 @@ def main():
     ft_id = proxy_connection.sendtoaddress(txin_p2sh_address, value_in)
     #ft_id = proxy_connection.sendrawtransaction(tx_FT)
     print("Funding Transaction sent successfully to the node.")
-    print(b2x(ft_id))
+    print(b2lx(ft_id))
     print("\n")
-    proxy_connection.generate(1)
+    proxy_connection.generate(10)
         
     #####-------------------------------#####
         ##### COMMITMENT TRANSACTIONS #####
@@ -377,31 +387,25 @@ def main():
     
     third_a_keypairs, third_b_keypairs, devices_keypairs = generateKeys()
     value_in2 = proxy_connection.getrawtransaction(ft_id).vout[0].nValue
+    
 # =============================================================================
-#     
 #     #### COMMITMENT TRANSACTION A ####    
 #     # Index of the commitment transaction. Should range between 0 and 9. 
 #     tx_index0 = 0
-#     l_SA, l_SB, l_S3, tx_commA0 = commitmentA(seckeyA1, seckeyB1, ft_id, tx_index0, devices_keypairs, third_a_keypairs, value_in2, r_S)
-#     comm_A_id =proxy_connection.sendrawtransaction(tx_commA0) 
+#     l_SA_CommA, l_SB_CommA, l_S3_CommA, tx_commA0, secKeys = commitmentA(seckeyA1, seckeyB1, ft_id, tx_index0, devices_keypairs, third_a_keypairs,third_b_keypairs, value_in2, r_S)
+#     txin_scriptPubKey = l_S3_CommA.to_p2sh_scriptPubKey()
+#     txin_p2sh_address = CBitcoinAddress.from_scriptPubKey(txin_scriptPubKey)
+#     comm_A_id = proxy_connection.sendtoaddress(txin_p2sh_address, value_in2)
+#   
+#     #comm_A_id =proxy_connection.sendrawtransaction(tx_commA0) 
 #     print("Commitment Transaction A sent successfully to the node.")
 #     print(b2x(comm_A_id))
 #     print("\n")
+#     proxy_connection.generate(10)
 # =============================================================================
-    
-    #### COMMITMENT TRANSACTION B ####
-    tx_index1 = 1
-    l_SA_Comm, l_SB_Comm, tx_commB0, secKeys = commitmentB(seckeyA1, seckeyB1, ft_id, tx_index1, devices_keypairs, third_b_keypairs, value_in2, r_S)
-    txin_scriptPubKey = l_SB_Comm.to_p2sh_scriptPubKey()
-    txin_p2sh_address = CBitcoinAddress.from_scriptPubKey(txin_scriptPubKey)
-    comm_B_id = proxy_connection.sendtoaddress(txin_p2sh_address, value_in2)
-    proxy_connection.generate(1)
-    #comm_B_id =proxy_connection.sendrawtransaction(tx_commB0) 
-    print("Commitment Transaction B sent successfully to the node.")
-    print(b2x(comm_B_id))
-    print("\n")
-    
+
 # =============================================================================
+# 
 #     #####-------------------------------#####
 #         ##### CLOSING TRANSACTION #####
 #     #####-------------------------------#####
@@ -429,28 +433,43 @@ def main():
 #     print(b2x(ct_id))
 #     print("\n")
 # =============================================================================
+
+    
+    #### COMMITMENT TRANSACTION B ####
+    tx_index1 = 1
+    l_SA_Comm, l_SB_Comm, tx_commB0, secKeys = commitmentB(seckeyA1, seckeyB1, ft_id, tx_index1, devices_keypairs, third_b_keypairs, value_in2, r_S)
+    
+    txin_scriptPubKey = l_SB_Comm.to_p2sh_scriptPubKey()
+    txin_p2sh_address = CBitcoinAddress.from_scriptPubKey(txin_scriptPubKey)
+    comm_B_id = proxy_connection.sendtoaddress(txin_p2sh_address, value_in2)
+  # proxy_connection.generate(1)
+   # comm_B_id =proxy_connection.sendrawtransaction(tx_commB0) 
+    print("Commitment Transaction B sent successfully to the node.")
+    print(b2lx(comm_B_id))
+    print("\n")
+    proxy_connection.generate(10)
+    
     
     #####-------------------------------#####
         ##### RECOVERY TRANSACTION #####
     #####-------------------------------#####  
-    value_in = tx_commB0.vout[0].nValue
+   # value_in = tx_commB0.vout[0].nValue
+    value_in = proxy_connection.getrawtransaction(comm_B_id).vout[0].nValue
     txid = comm_B_id
     vout = 0
     txin = CMutableTxIn(COutPoint(txid, vout))
 
-    
      # Perform recovery Tx. I use tx_index to search for the keys used for commitment_B
     l_S1, l_S2, l_S3, tx_recov = recoveryTx(secKeys, txin, tx_index1, devices_keypairs,third_a_keypairs, third_b_keypairs, value_in, l_SB_Comm)
-# =============================================================================
-#     txin_scriptPubKey = l_S3.to_p2sh_scriptPubKey()
-#     txin_p2sh_address = CBitcoinAddress.from_scriptPubKey(txin_scriptPubKey)
-#     recov_id = proxy_connection.sendtoaddress(txin_p2sh_address, value_in)
-# =============================================================================
+    #txin_scriptPubKey = l_S3.to_p2sh_scriptPubKey()
+    #txin_p2sh_address = CBitcoinAddress.from_scriptPubKey(txin_scriptPubKey)
+    #recov_id = proxy_connection.sendtoaddress(txin_p2sh_address, value_in)
     recov_id = proxy_connection.sendrawtransaction(tx_recov)
-    proxy_connection.generate(1)
     print("Recovery Transaction sent successfully to the node.")
     print(b2x(recov_id))
     print("\n")
+    proxy_connection.generate(1)
+  
 
 
 if __name__ == '__main__':
